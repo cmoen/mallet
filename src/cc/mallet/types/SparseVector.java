@@ -989,6 +989,25 @@ public class SparseVector implements ConstantMatrix, Vector, Serializable
 				out.writeDouble (values[i]);
 	}
 
+	public void write(DataOutputStream out) throws IOException {
+		if (this instanceof AugmentableFeatureVector) {
+			((AugmentableFeatureVector)this).sortIndices();
+		}
+
+		out.writeInt(indices == null ? -1 : indices.length);
+		out.writeInt(values == null ? -1 : values.length);
+		if (indices != null) {
+			for (int i = 0; i < indices.length; i++) {
+				out.writeInt(indices[i]);
+			}
+		}
+		if (values != null) {
+			for (int i = 0; i < values.length; i++) {
+				out.writeDouble(values[i]);
+			}
+		}
+	}
+
 	private void readObject (ObjectInputStream in)
 		throws IOException, ClassNotFoundException
 	{
@@ -1008,6 +1027,29 @@ public class SparseVector implements ConstantMatrix, Vector, Serializable
 				values[i] = in.readDouble();
 				if (Double.isInfinite (values[i]))
 					this.hasInfinite = true;
+			}
+		}
+	}
+
+	public void read(DataInputStream in) throws IOException {
+		int indicesSize = in.readInt();
+		int valuesSize = in.readInt();
+		this.hasInfinite = false;
+		indices = null;
+		values = null;
+		if (indicesSize >= 0) {
+			indices = new int[indicesSize];
+			for (int i = 0; i < indicesSize; i++) {
+				indices[i] = in.readInt();
+			}
+		}
+		if (valuesSize >= 0) {
+			values = new double[valuesSize];
+			for (int i = 0; i < valuesSize; i++) {
+				values[i] = in.readDouble();
+				if (Double.isInfinite (values[i])) {
+					this.hasInfinite = true;
+				}
 			}
 		}
 	}

@@ -14,6 +14,8 @@
 
 package cc.mallet.fst;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -506,7 +508,55 @@ public class CRF extends Transducer implements Serializable
 			out.writeObject (initialWeights);
 			out.writeObject (finalWeights);
 		}
-		
+
+		public void write(DataOutputStream out) throws IOException {
+			weightAlphabet.write(out);
+
+			out.writeInt(weights.length);
+			for (int i = 0; i < weights.length; i++) {
+				SparseVector vector = weights[i];
+				vector.write(out);
+			}
+			writeDoubleArray(out, defaultWeights);
+			writeBooleanArray(out, weightsFrozen);
+			writeDoubleArray(out, initialWeights);
+			writeDoubleArray(out, finalWeights);
+		}
+
+		private void writeDoubleArray(DataOutputStream out, double[] array) throws IOException {
+			int length = array.length;
+			out.writeInt(length);
+			for (int i = 0; i < length; i++) {
+				out.writeDouble(array[i]);
+			}
+		}
+
+		private double[] readDoubleArray(DataInputStream in) throws IOException {
+			int length = in.readInt();
+			double[] array = new double[length];
+			for (int i = 0; i < length; i++) {
+				array[i] = in.readDouble();
+			}
+			return array;
+		}
+
+		private void writeBooleanArray(DataOutputStream out, boolean[] array) throws IOException {
+			int length = array.length;
+			out.writeInt(length);
+			for (int i = 0; i < length; i++) {
+				out.writeBoolean(array[i]);
+			}
+		}
+
+		private boolean[] readBooleanArray(DataInputStream in) throws IOException {
+			int length = in.readInt();
+			boolean[] array = new boolean[length];
+			for (int i = 0; i < length; i++) {
+				array[i] = in.readBoolean();
+			}
+			return array;
+		}
+
 		private void readObject (ObjectInputStream in) throws IOException, ClassNotFoundException {
 			int version = in.readInt ();
 			weightAlphabet = (Alphabet) in.readObject ();
@@ -516,8 +566,28 @@ public class CRF extends Transducer implements Serializable
 			initialWeights = (double[]) in.readObject ();
 			finalWeights = (double[]) in.readObject ();
 		}
+
+		public void read(DataInputStream in) throws IOException {
+			weightAlphabet.read(in);
+
+			int weightsLength = in.readInt();
+			weights = new SparseVector[weightsLength];
+			for (int i = 0; i < weightsLength; i++) {
+				SparseVector vector = new SparseVector();
+				vector.read(in);
+				weights[i] = vector;
+			}
+
+			defaultWeights = readDoubleArray(in);
+			weightsFrozen = readBooleanArray(in);
+			initialWeights = readDoubleArray(in);
+			finalWeights = readDoubleArray(in);
+		}
 	}
-	
+
+	public CRF() {
+	}
+
 	public CRF (Pipe inputPipe, Pipe outputPipe)
 	{
 		super (inputPipe, outputPipe);
@@ -1648,6 +1718,34 @@ public class CRF extends Transducer implements Serializable
 		out.writeInt (numParameters);
 	}
 
+	public void write(DataOutputStream out) throws IOException {
+		inputAlphabet.write(out);
+		outputAlphabet.write(out);
+
+		out.writeInt(states.size());
+		for (State state : states) {
+			state.write(out);
+		}
+
+		out.writeInt(initialStates.size());
+		for (State state : initialStates) {
+			out.writeUTF(state.getName());
+		}
+
+		out.writeInt(name2state.size());
+		for (String name : name2state.keySet()) {
+			State state = name2state.get(name);
+			out.writeUTF(state.getName());
+		}
+
+		parameters.write(out);
+
+		out.writeInt(weightsValueChangeStamp);
+		out.writeInt(weightsStructureChangeStamp);
+		out.writeInt(cachedNumParametersStamp);
+		out.writeInt(numParameters);
+	}
+
 	@SuppressWarnings("unchecked")
   private void readObject (ObjectInputStream in) throws IOException, ClassNotFoundException {
 		in.readInt ();
@@ -1666,7 +1764,56 @@ public class CRF extends Transducer implements Serializable
 		numParameters = in.readInt ();
 	}
 
-	
+	public void read(DataInputStream in) throws IOException {
+		inputAlphabet = new Alphabet();
+		inputAlphabet.read(in);
+		outputAlphabet = new Alphabet();
+		outputAlphabet.read(in);
+
+		int statesLength = in.readInt();
+		states = new ArrayList<State>();
+		for (int i = 0; i < statesLength; i++) {
+			State state = new State();
+			state.read(in, this);
+			states.add(state);
+		}
+
+		int initialStatesLength = in.readInt();
+		initialStates = new ArrayList<State>();
+		for (int i = 0; i < initialStatesLength; i++) {
+			String name = in.readUTF();
+			State state = findState(name);
+			assert state != null;
+			initialStates.add(state);
+		}
+
+		int keys = in.readInt();
+
+		name2state = new HashMap<String, State>();
+		for (int i = 0; i < keys; i++) {
+			String name = in.readUTF();
+			State state = findState(name);
+			assert state != null;
+			name2state.put(name, state);
+		}
+
+		parameters.read(in);
+
+		weightsValueChangeStamp = in.readInt ();
+		weightsStructureChangeStamp = in.readInt ();
+		cachedNumParametersStamp = in.readInt ();
+		numParameters = in.readInt ();
+	}
+
+	private State findState(String name) {
+		for (State state : states) {
+			if (state.getName().equals(name)) {
+				return state;
+			}
+		}
+		return null;
+	}
+
 	// Why is this "static"?  Couldn't it be a non-static inner class? (In Transducer also)  -akm 12/2007
 	public static class State extends Transducer.State implements Serializable
 	{
@@ -1683,6 +1830,10 @@ public class CRF extends Transducer implements Serializable
 
 		protected State() {
 			super ();
+		}
+
+		public void setCRF(CRF crf) {
+			this.crf = crf;
 		}
 
 		protected State (String name, int index,
@@ -1804,8 +1955,30 @@ public class CRF extends Transducer implements Serializable
 			out.writeObject(crf);
 		}
 
-		private void readObject (ObjectInputStream in) throws IOException, ClassNotFoundException {
-			in.readInt ();
+		public void write(DataOutputStream out) throws IOException {
+			out.writeUTF(name);
+			out.writeInt(index);
+
+			out.writeInt(destinationNames.length);
+			for (String destinationName : destinationNames) {
+				out.writeUTF(destinationName);
+			}
+
+			out.writeInt(destinations.length);
+
+			out.writeInt(weightsIndices.length);
+			for (int[] weightsIndex : weightsIndices) {
+				writeIntArray(out, weightsIndex);
+			}
+
+			out.writeInt(labels.length);
+			for (String label : labels) {
+				out.writeUTF(label);
+			}
+		}
+
+		private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
+			in.readInt();
 			name = (String) in.readObject();
 			index = in.readInt();
 			destinationNames = (String[]) in.readObject();
@@ -1815,9 +1988,51 @@ public class CRF extends Transducer implements Serializable
 			crf = (CRF) in.readObject();
 		}
 
+		public void read(DataInputStream in, CRF crf) throws IOException {
+			name = in.readUTF();
+			index = in.readInt();
 
+			int destinationNamesLength = in.readInt();
+			destinationNames = new String[destinationNamesLength];
+			for (int i = 0; i < destinationNamesLength; i++) {
+				destinationNames[i] = in.readUTF();
+			}
+
+			int destinationsLength = in.readInt();
+			destinations = new State[destinationsLength];
+
+			int weightsIndicesLength = in.readInt();
+			weightsIndices = new int[weightsIndicesLength][];
+			for (int i = 0; i < weightsIndicesLength; i++) {
+				weightsIndices[i] = readIntArray(in);
+			}
+
+			int labelsLength = in.readInt();
+			labels = new String[labelsLength];
+			for (int i = 0; i < labelsLength; i++) {
+				labels[i] = in.readUTF();
+			}
+
+			this.crf = crf;
+		}
+
+		private void writeIntArray(DataOutputStream out, int[] array) throws IOException {
+			int length = array.length;
+			out.writeInt(length);
+			for (int i = 0; i < length; i++) {
+				out.writeInt(array[i]);
+			}
+		}
+
+		private int[] readIntArray(DataInputStream in) throws IOException {
+			int length = in.readInt();
+			int[] array = new int[length];
+			for (int i = 0; i < length; i++) {
+				array[i] = in.readInt();
+			}
+			return array;
+		}
 	}
-
 
 	protected static class TransitionIterator extends Transducer.TransitionIterator implements Serializable
 	{

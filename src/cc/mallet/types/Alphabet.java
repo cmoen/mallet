@@ -265,6 +265,16 @@ public class Alphabet implements Serializable
 		out.writeObject(instanceId);
 	}
 
+	public void write(DataOutputStream out) throws IOException {
+		out.writeInt(entries.size());
+		for (int i = 0; i < entries.size(); i++) {
+			String entry = (String) entries.get(i);
+			out.writeUTF(entry);
+		}
+		out.writeBoolean(growthStopped);
+		out.writeUTF(entryClass.getName());
+	}
+
 	private void readObject (ObjectInputStream in) throws IOException, ClassNotFoundException {
 		int version = in.readInt ();
 		int size = in.readInt();
@@ -282,7 +292,25 @@ public class Alphabet implements Serializable
 		}
 	}
 
-	private transient static HashMap deserializedEntries = new HashMap();
+	public void read(DataInputStream in) throws IOException {
+		int size = in.readInt();
+		entries = new ArrayList(size);
+		map = new ObjectIntOpenHashMap(size);
+		for (int i = 0; i < size; i++) {
+			String o = in.readUTF();
+			map.put(o, i);
+			entries.add(o);
+		}
+		growthStopped = in.readBoolean();
+		String classname = in.readUTF();
+		try {
+			entryClass = Class.forName(classname);
+		} catch (ClassNotFoundException e) {
+			throw new RuntimeException("Can't make class " + classname, e);
+		}
+	}
+
+		private transient static HashMap deserializedEntries = new HashMap();
 	/**
 	 * This gets called after readObject; it lets the object decide whether
 	 * to return itself or return a previously read in version.
